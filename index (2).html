@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Robot Controller – Arduino, ESP32, ESP8266</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#eef1f4;--sf:#fff;--ink:#17212b;--mut:#5b6b7a;--ln:#cfd7df;--ac:#0b6e8a;--acf:#fff;--ok:#1a8f4c;--er:#c4352b;--lg:#f4f6f8}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#141b23;--sf:#1e2833;--ink:#e6edf3;--mut:#93a4b5;--ln:#33414f;--ac:#4cc3e0;--acf:#06232c;--ok:#4cd187;--er:#ff7a70;--lg:#0f151b}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#141b23;--sf:#1e2833;--ink:#e6edf3;--mut:#93a4b5;--ln:#33414f;--ac:#4cc3e0;--acf:#06232c;--ok:#4cd187;--er:#ff7a70;--lg:#0f151b}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:980px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 2px}h2{font-size:15px;margin:0 0 10px}
+p.s{margin:0 0 14px;color:var(--mut)}
+.grid{display:grid;gap:14px;grid-template-columns:1fr 1fr}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.p{background:var(--sf);border:1px solid var(--ln);border-radius:10px;padding:14px}
+.full{grid-column:1/-1}
+button,select,input{font:inherit;color:var(--ink)}
+button{background:var(--sf);border:1px solid var(--ln);border-radius:8px;padding:8px 12px;cursor:pointer;min-height:40px}
+button.pri{background:var(--ac);color:var(--acf);border-color:var(--ac);font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+input,select{background:var(--lg);border:1px solid var(--ln);border-radius:8px;padding:7px 9px;min-height:38px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.st{display:flex;align-items:center;gap:8px;font-weight:600}
+.dot{width:11px;height:11px;border-radius:50%;background:var(--er)}.dot.on{background:var(--ok)}
+.dpad{display:grid;grid-template-columns:repeat(3,76px);grid-template-rows:repeat(3,76px);gap:8px;justify-content:center;margin:8px 0}
+.dpad button{font-size:22px;touch-action:none;user-select:none}
+.dpad button.act{background:var(--ac);color:var(--acf)}
+.dpad button.stop{background:var(--er);color:#fff;border-color:var(--er);font-weight:700;font-size:15px}
+label{display:block;color:var(--mut);font-size:13px;margin:8px 0 3px}
+input[type=range]{width:100%;padding:0}
+#log{background:var(--lg);border:1px solid var(--ln);border-radius:8px;height:170px;overflow:auto;padding:8px;font:12.5px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+.tx{color:var(--ac)}.rx{color:var(--ok)}.er{color:var(--er)}
+pre{background:var(--lg);border:1px solid var(--ln);border-radius:8px;padding:10px;overflow:auto;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;max-height:260px;margin:8px 0}
+.map{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}.map input{width:100%}
+.tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}.tabs button[aria-pressed=true]{background:var(--ac);color:var(--acf);border-color:var(--ac)}
+.note{font-size:13px;color:var(--mut)}
+#joy{width:180px;height:180px;margin:8px auto;border-radius:50%;border:2px solid var(--ln);background:var(--lg);position:relative;touch-action:none}
+#knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:var(--ac)}
+</style></head>
+<body><main>
+<h1>Robot Controller</h1>
+<p class="s">Drive robots on Arduino, ESP32, ESP8266, Raspberry Pi Pico and similar boards over USB, Bluetooth or Wi-Fi.</p>
+<div class="grid">
+
+<section class="p full">
+<h2>Connection</h2>
+<div class="tabs" role="group" aria-label="Connection type">
+<button data-m="serial" aria-pressed="true">USB serial</button>
+<button data-m="ble" aria-pressed="false">Bluetooth LE</button>
+<button data-m="ws" aria-pressed="false">Wi-Fi WebSocket</button>
+</div>
+<div class="row" id="opts"></div>
+<div class="row" style="margin-top:10px">
+<button class="pri" id="conn">Connect</button><button id="disc" disabled>Disconnect</button>
+<span class="st"><span class="dot" id="dot"></span><span id="stt">Not connected</span></span>
+</div>
+<p class="note" id="hint"></p>
+</section>
+
+<section class="p">
+<h2>Drive</h2>
+<div class="dpad" id="dpad">
+<span></span><button data-k="F" aria-label="Forward">▲</button><span></span>
+<button data-k="L" aria-label="Left">◀</button><button class="stop" data-k="S">STOP</button><button data-k="R" aria-label="Right">▶</button>
+<span></span><button data-k="B" aria-label="Back">▼</button><span></span>
+</div>
+<p class="note" style="text-align:center">Hold a button to move, release to stop. Keyboard: arrow keys or WASD, space to stop.</p>
+<label for="spd">Speed: <b id="spv">150</b> / 255</label>
+<input type="range" id="spd" min="0" max="255" value="150">
+<p class="note" style="text-align:center;margin-bottom:0">Joystick: drag to steer. The speed slider sets the top speed.</p>
+<div id="joy"><div id="knob"></div></div>
+</section>
+
+<section class="p">
+<h2>Servos and outputs</h2>
+<div id="servos"></div>
+<div class="row" style="margin-top:10px">
+<button data-c="LED:1">LED on</button><button data-c="LED:0">LED off</button>
+<button data-c="BEEP">Beep</button><button data-c="PING">Ping</button>
+</div>
+<label for="cu">Custom command</label>
+<div class="row"><input id="cu" placeholder="e.g. ARM:UP" style="flex:1;min-width:120px"><button id="cus">Send</button></div>
+</section>
+
+<section class="p full">
+<h2>Command map</h2>
+<p class="note" style="margin-top:0">Match these to your firmware. Saved in this browser.</p>
+<div class="map" id="map"></div>
+<div class="row" style="margin-top:10px">
+<label style="margin:0" for="eol">Line ending</label>
+<select id="eol"><option value="\n">Newline</option><option value="\r\n">CR + LF</option><option value="">None</option></select>
+</div>
+</section>
+
+<section class="p full">
+<h2>Console</h2>
+<div id="log" role="log"></div>
+<div class="row" style="margin-top:8px"><button id="clr">Clear</button><button id="thm">Switch theme</button></div>
+</section>
+
+<section class="p full">
+<h2>Starter firmware</h2>
+<p class="note" style="margin-top:0">Flash this to an Arduino or ESP32 with an L298N driver. It understands the default command map. Change the pins to match your wiring.</p>
+<pre id="fw"></pre>
+<button id="cp">Copy sketch</button>
+<h2 style="margin-top:22px">ESP32 Wi-Fi firmware</h2>
+<p class="note" style="margin-top:0">Runs a WebSocket server on port 81 and understands the same commands, including the joystick. Install the "WebSockets" library by Markus Sattler, use ESP32 core 3.x, then enter the IP shown in the Serial Monitor as ws://IP:81. Browsers block ws:// addresses from https pages, so this works best when this page is saved and opened as a local file, or served from your own network. From this hosted page, use USB or Bluetooth.</p>
+<pre id="fw2"></pre>
+<button id="cp2">Copy Wi-Fi sketch</button>
+</section>
+</div></main>
+<script>
+const $=s=>document.querySelector(s);
+const FW=`// Arduino Uno/Nano (USB serial). For ESP32, replace analogWrite with ledcWrite
+// or use the ESP32 Arduino core 3.x, which supports analogWrite.
+#include <Servo.h> // on ESP32 install the ESP32Servo library instead
+Servo sv1;
+const int ENA=5, IN1=6, IN2=7, IN3=8, IN4=12, ENB=3; // L298N pins
+// Servo on pin 2, active buzzer on pin 4
+int spd=150;
+unsigned long last=0; // time of last command, for auto-stop
+void drive(int a,int b,int c,int d){
+  digitalWrite(IN1,a);digitalWrite(IN2,b);
+  digitalWrite(IN3,c);digitalWrite(IN4,d);
+  analogWrite(ENA,spd);analogWrite(ENB,spd);
+}
+void motor(int l,int r){ // signed speeds -255..255
+  digitalWrite(IN1,l>0);digitalWrite(IN2,l<0);
+  digitalWrite(IN3,r>0);digitalWrite(IN4,r<0);
+  analogWrite(ENA,abs(l));analogWrite(ENB,abs(r));
+}
+void setup(){
+  Serial.begin(115200);
+  int p[]={ENA,IN1,IN2,IN3,IN4,ENB};
+  for(int x:p)pinMode(x,OUTPUT);
+  pinMode(LED_BUILTIN,OUTPUT);pinMode(4,OUTPUT);
+  sv1.attach(2);
+}
+void loop(){
+  if(millis()-last>500)drive(0,0,0,0); // auto-stop if the app goes quiet
+  if(!Serial.available())return;
+  String s=Serial.readStringUntil('\\n');s.trim();last=millis();
+  if(s=="F")drive(1,0,1,0);
+  else if(s=="B")drive(0,1,0,1);
+  else if(s=="L")drive(0,1,1,0);
+  else if(s=="R")drive(1,0,0,1);
+  else if(s=="S")drive(0,0,0,0);
+  else if(s.startsWith("V"))spd=s.substring(1).toInt();
+  else if(s=="LED:1")digitalWrite(LED_BUILTIN,HIGH);
+  else if(s=="LED:0")digitalWrite(LED_BUILTIN,LOW);
+  else if(s=="PING")Serial.println("PONG");
+  else if(s.startsWith("S1:"))sv1.write(s.substring(3).toInt());
+  else if(s=="BEEP"){digitalWrite(4,HIGH);delay(100);digitalWrite(4,LOW);}
+  else if(s.startsWith("M")){int c=s.indexOf(',');motor(s.substring(1,c).toInt(),s.substring(c+1).toInt());}
+  Serial.println("OK "+s);
+}`;
+$('#fw').textContent=FW;
+const store=(k,v)=>{try{if(v===undefined)return JSON.parse(localStorage.getItem(k));localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
+const def={F:'F',B:'B',L:'L',R:'R',S:'S',spd:'V{n}',servo:'S{ch}:{a}',joy:'M{l},{r}'};
+let cm=Object.assign({},def,store('rc_map')||{});
+const names={F:'Forward',B:'Back',L:'Left',R:'Right',S:'Stop',spd:'Speed',servo:'Servo',joy:'Joystick'};
+$('#map').innerHTML=Object.keys(def).map(k=>`<div><label for="m_${k}">${names[k]}</label><input id="m_${k}" value="${cm[k]}"></div>`).join('');
+Object.keys(def).forEach(k=>$('#m_'+k).oninput=e=>{cm[k]=e.target.value;store('rc_map',cm)});
+const ev=store('rc_eol');if(ev!=null)$('#eol').value=ev;$('#eol').onchange=e=>store('rc_eol',e.target.value);
+
+function log(t,c=''){const l=$('#log'),d=document.createElement('div');d.className=c;d.textContent=t;l.appendChild(d);l.scrollTop=l.scrollHeight;if(l.children.length>300)l.firstChild.remove()}
+let mode='serial',link=null;
+const hints={serial:'Plug the board in with a USB data cable. Needs Chrome, Edge or Opera on desktop or Android.',
+ble:'Needs a BLE UART module (HM-10, ESP32 BLE, Nordic UART service). Works in Chrome and Edge.',
+ws:'Your ESP serves a WebSocket, for example ws://192.168.1.50:81. Pages on https may only reach wss:// addresses, and the host page may block outside connections. If it fails, use USB or Bluetooth.'};
+function opts(){
+ $('#hint').textContent=hints[mode];
+ $('#opts').innerHTML=mode=='serial'?`<label style="margin:0" for="baud">Baud rate</label><select id="baud">${[9600,19200,38400,57600,115200,230400].map(b=>`<option ${b==115200?'selected':''}>${b}</option>`).join('')}</select>`
+ :mode=='ws'?`<input id="url" size="28" placeholder="ws://192.168.1.50:81" value="${store('rc_url')||''}" aria-label="WebSocket address">`
+ :`<label style="margin:0" for="bn">Name prefix (optional)</label><input id="bn" placeholder="HM-10, ESP32…">`}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{if(link)return log('Disconnect first.','er');
+ mode=b.dataset.m;document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-pressed',x==b));opts()});
+opts();
+function state(on,t){$('#dot').classList.toggle('on',on);$('#stt').textContent=t;$('#conn').disabled=on;$('#disc').disabled=!on}
+
+const NUS='6e400001-b5a0-f393-89e9-e0a40e0eed9e',HM='0000ffe0-0000-1000-8000-00805f9b34fb';
+const enc=new TextEncoder(),dec=new TextDecoder();
+async function connect(){
+ try{
+ if(mode=='serial'){
+  if(!('serial' in navigator))throw Error('Web Serial is not available here. Try Chrome or Edge, or open this page in its own tab.');
+  const port=await navigator.serial.requestPort();
+  await port.open({baudRate:+$('#baud').value});
+  const w=port.writable.getWriter(),rd=port.readable.getReader();let go=true;
+  link={send:d=>w.write(enc.encode(d)),close:async()=>{go=false;try{await rd.cancel()}catch(e){}try{w.releaseLock();rd.releaseLock();await port.close()}catch(e){}}};
+  (async()=>{try{while(go){const{value,done}=await rd.read();if(done)break;rxs(dec.decode(value))}}catch(e){}if(go&&link)drop()})();
+ }else if(mode=='ble'){
+  if(!('bluetooth' in navigator))throw Error('Web Bluetooth is not available here. Try Chrome or Edge, or open this page in its own tab.');
+  const pre=$('#bn').value.trim();
+  const dev=await navigator.bluetooth.requestDevice(pre?{filters:[{namePrefix:pre}],optionalServices:[NUS,HM]}:{acceptAllDevices:true,optionalServices:[NUS,HM]});
+  const srv=await dev.gatt.connect();let ch,rc;
+  try{const s=await srv.getPrimaryService(NUS);ch=await s.getCharacteristic('6e400002-b5a0-f393-89e9-e0a40e0eed9e');rc=await s.getCharacteristic('6e400003-b5a0-f393-89e9-e0a40e0eed9e')}
+  catch(e){const s=await srv.getPrimaryService(HM);ch=rc=await s.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb')}
+  try{await rc.startNotifications();rc.addEventListener('characteristicvaluechanged',e=>rxs(dec.decode(e.target.value)))}catch(e){}
+  dev.addEventListener('gattserverdisconnected',()=>{if(link)drop()});
+  link={send:async d=>{const b=enc.encode(d);for(let i=0;i<b.length;i+=20)await ch.writeValueWithoutResponse(b.slice(i,i+20))},close:async()=>{dev.gatt.disconnect()}};
+ }else{
+  const u=$('#url').value.trim();if(!u)throw Error('Enter a ws:// address.');store('rc_url',u);
+  const ws=await new Promise((res,rej)=>{const s=new WebSocket(u);s.onopen=()=>res(s);s.onerror=()=>rej(Error('Could not reach '+u+'. Check the address, that you are on the same network, and that this page is allowed to connect.'))});
+  ws.onmessage=e=>rxs(String(e.data)+'\n');ws.onclose=()=>{if(link)drop()};
+  link={send:async d=>ws.send(d),close:async()=>ws.close()};
+ }
+ state(true,'Connected ('+mode+')');log('Connected.','rx');
+ }catch(e){link=null;log(e.message||String(e),'er')}
+}
+let buf='';function rxs(t){buf+=t;let i;while((i=buf.search(/\r?\n/))>=0){log('◀ '+buf.slice(0,i),'rx');buf=buf.slice(i).replace(/^\r?\n/,'')}}
+function drop(){link=null;state(false,'Not connected');log('Connection lost.','er')}
+async function disc(){if(!link)return;const l=link;link=null;await l.close();state(false,'Not connected');log('Disconnected.')}
+async function send(c,q){if(!link)return log('Not connected. Connect a board first.','er');
+ try{await link.send(c+$('#eol').value);if(!q)log('▶ '+c,'tx')}catch(e){log('Send failed: '+e.message,'er')}}
+$('#conn').onclick=connect;$('#disc').onclick=disc;
+
+let held=null,sp=null;
+function press(k){if(held===k)return;if(held)release();held=k;send(cm[k]);beat(()=>cm[k]);document.querySelector(`[data-k=${k}]`).classList.add('act')}
+function release(){if(!held)return;const k=held;document.querySelector(`[data-k=${k}]`).classList.remove('act');held=null;beat();if(k!=='S')send(cm.S)}
+document.querySelectorAll('#dpad button').forEach(b=>{const k=b.dataset.k;
+ b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);press(k)});
+ b.addEventListener('pointerup',release);b.addEventListener('pointercancel',release)});
+const kmap={ArrowUp:'F',w:'F',ArrowDown:'B',s:'B',ArrowLeft:'L',a:'L',ArrowRight:'R',d:'R',' ':'S',Escape:'S'};
+const kk=e=>kmap[e.key.length>1?e.key:e.key.toLowerCase()];
+addEventListener('keydown',e=>{if(/INPUT|SELECT|TEXTAREA|BUTTON/.test(e.target.tagName)&&e.key==' ')return;if(/INPUT|SELECT/.test(e.target.tagName)||e.repeat)return;const k=kk(e);if(k){e.preventDefault();press(k)}});
+addEventListener('keyup',e=>{if(kk(e))release()});
+addEventListener('blur',release);
+
+let hb=null;function beat(fn){clearInterval(hb);hb=fn?setInterval(()=>{if(link)send(fn(),1)},250):null} // heartbeat: repeat command while held
+const joy=$('#joy'),kb=$('#knob');let jd=false,jl=0,jr=0,jt=0;
+function jmove(e){const r=joy.getBoundingClientRect(),R=r.width/2;let x=(e.clientX-r.left-R)/R,y=-(e.clientY-r.top-R)/R;const m=Math.hypot(x,y);if(m>1){x/=m;y/=m}
+ kb.style.transform=`translate(${x*R*.6}px,${-y*R*.6}px)`;
+ const s=+$('#spd').value,cl=v=>Math.max(-1,Math.min(1,v));jl=Math.round(cl(y+x)*s);jr=Math.round(cl(y-x)*s)}
+const jcmd=()=>cm.joy.replace('{l}',jl).replace('{r}',jr);
+joy.addEventListener('pointerdown',e=>{jd=true;joy.setPointerCapture(e.pointerId);jmove(e);send(jcmd(),1);beat(jcmd)});
+joy.addEventListener('pointermove',e=>{if(jd&&Date.now()-jt>60){jt=Date.now();jmove(e);send(jcmd(),1)}});
+const jend=()=>{if(!jd)return;jd=false;jl=jr=0;kb.style.transform='';beat();send(jcmd())};
+joy.addEventListener('pointerup',jend);joy.addEventListener('pointercancel',jend);
+$('#spd').oninput=e=>{$('#spv').textContent=e.target.value;clearTimeout(sp);sp=setTimeout(()=>send(cm.spd.replace('{n}',e.target.value)),120)};
+$('#servos').innerHTML=[1,2,3].map(i=>`<label for="sv${i}">Servo ${i}: <b id="sa${i}">90</b>°</label><input type="range" id="sv${i}" min="0" max="180" value="90" data-ch="${i}">`).join('');
+const st={};
+document.querySelectorAll('[data-ch]').forEach(r=>r.oninput=()=>{const c=r.dataset.ch;$('#sa'+c).textContent=r.value;clearTimeout(st[c]);st[c]=setTimeout(()=>send(cm.servo.replace('{ch}',c).replace('{a}',r.value)),100)});
+document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>send(b.dataset.c));
+$('#cus').onclick=()=>{const v=$('#cu').value.trim();if(v)send(v)};$('#cu').onkeydown=e=>{if(e.key=='Enter')$('#cus').click()};
+$('#clr').onclick=()=>$('#log').textContent='';
+$('#cp').onclick=async()=>{try{await navigator.clipboard.writeText(FW);$('#cp').textContent='Copied'}catch(e){const r=document.createRange();r.selectNodeContents($('#fw'));getSelection().removeAllRanges();getSelection().addRange(r);$('#cp').textContent='Selected, press copy'}setTimeout(()=>$('#cp').textContent='Copy sketch',1800)};
+$('#thm').onclick=()=>{const d=document.documentElement,dark=d.dataset.theme?d.dataset.theme=='dark':matchMedia('(prefers-color-scheme:dark)').matches;d.dataset.theme=dark?'light':'dark'};
+const FW2=`#include <WiFi.h>
+#include <WebSocketsServer.h>
+const char* SSID="YOUR_WIFI";
+const char* PASS="YOUR_PASSWORD";
+const int ENA=25, IN1=26, IN2=27, IN3=14, IN4=13, ENB=33; // L298N pins
+WebSocketsServer ws(81);
+int spd=150;
+unsigned long last=0;
+void motor(int l,int r){ // signed speeds -255..255
+  digitalWrite(IN1,l>0);digitalWrite(IN2,l<0);
+  digitalWrite(IN3,r>0);digitalWrite(IN4,r<0);
+  analogWrite(ENA,abs(l));analogWrite(ENB,abs(r));
+}
+void onEvent(uint8_t n,WStype_t t,uint8_t* p,size_t len){
+  if(t!=WStype_TEXT)return;
+  String s=String((char*)p).substring(0,len);s.trim();last=millis();
+  if(s=="F")motor(spd,spd);
+  else if(s=="B")motor(-spd,-spd);
+  else if(s=="L")motor(-spd,spd);
+  else if(s=="R")motor(spd,-spd);
+  else if(s=="S")motor(0,0);
+  else if(s.startsWith("V"))spd=s.substring(1).toInt();
+  else if(s.startsWith("M")){int c=s.indexOf(',');motor(s.substring(1,c).toInt(),s.substring(c+1).toInt());}
+  else if(s=="LED:1")digitalWrite(LED_BUILTIN,HIGH);
+  else if(s=="LED:0")digitalWrite(LED_BUILTIN,LOW);
+  else if(s=="PING"){ws.sendTXT(n,"PONG");return;}
+  ws.sendTXT(n,"OK "+s);
+}
+void setup(){
+  Serial.begin(115200);
+  int p[]={ENA,IN1,IN2,IN3,IN4,ENB,LED_BUILTIN};
+  for(int x:p)pinMode(x,OUTPUT);
+  WiFi.begin(SSID,PASS);
+  while(WiFi.status()!=WL_CONNECTED){delay(300);Serial.print(".");}
+  Serial.println();Serial.print("Use ws://");Serial.print(WiFi.localIP());Serial.println(":81");
+  ws.begin();ws.onEvent(onEvent);
+}
+void loop(){
+  ws.loop();
+  if(millis()-last>500)motor(0,0); // auto-stop if the app goes quiet
+}`;
+$('#fw2').textContent=FW2;
+$('#cp2').onclick=async()=>{try{await navigator.clipboard.writeText(FW2);$('#cp2').textContent='Copied'}catch(e){const r=document.createRange();r.selectNodeContents($('#fw2'));getSelection().removeAllRanges();getSelection().addRange(r);$('#cp2').textContent='Selected, press copy'}setTimeout(()=>$('#cp2').textContent='Copy Wi-Fi sketch',1800)};
+log('Ready. Choose a connection type and press Connect.');
+</script></body></html>
