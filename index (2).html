@@ -13,9 +13,9 @@ body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-app
 main{max-width:980px;margin:0 auto;padding:16px}
 h1{font-size:22px;margin:4px 0 2px}h2{font-size:15px;margin:0 0 10px}
 p.s{margin:0 0 14px;color:var(--mut)}
-.grid{display:grid;gap:14px;grid-template-columns:1fr 1fr}
-@media(max-width:760px){.grid{grid-template-columns:1fr}}
-.p{background:var(--sf);border:1px solid var(--ln);border-radius:10px;padding:14px}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}
+@media(max-width:760px){.grid{grid-template-columns:minmax(0,1fr)}}
+.p{min-width:0;background:var(--sf);border:1px solid var(--ln);border-radius:10px;padding:14px}
 .full{grid-column:1/-1}
 button,select,input{font:inherit;color:var(--ink)}
 button{background:var(--sf);border:1px solid var(--ln);border-radius:8px;padding:8px 12px;cursor:pointer;min-height:40px}
@@ -38,6 +38,8 @@ pre{background:var(--lg);border:1px solid var(--ln);border-radius:8px;padding:10
 .map{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}.map input{width:100%}
 .tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}.tabs button[aria-pressed=true]{background:var(--ac);color:var(--acf);border-color:var(--ac)}
 .note{font-size:13px;color:var(--mut)}
+#es{position:fixed;left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:5;background:var(--er);color:#fff;border:0;font-weight:700;min-height:48px;letter-spacing:.5px}
+main{padding-bottom:90px}
 #joy{width:180px;height:180px;margin:8px auto;border-radius:50%;border:2px solid var(--ln);background:var(--lg);position:relative;touch-action:none}
 #knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:var(--ac)}
 </style></head>
@@ -97,6 +99,22 @@ pre{background:var(--lg);border:1px solid var(--ln);border-radius:8px;padding:10
 </section>
 
 <section class="p full">
+<h2>Quick buttons</h2>
+<div class="row" id="qb"></div>
+<div class="row" style="margin-top:10px"><input id="qn" placeholder="Label" size="10" aria-label="Button label"><input id="qc" placeholder="Command" size="14" aria-label="Button command"><button id="qa">Add button</button></div>
+</section>
+<section class="p">
+<h2>Live readings</h2>
+<div class="row" id="tele"><span class="note">Print lines like DIST:23 from your board and they appear here.</span></div>
+<div class="row" style="margin-top:10px"><button id="png">Test latency</button><b id="lat">-</b></div>
+<p class="note" id="gp">Gamepad: not detected. Connect one and press a button.</p>
+</section>
+<section class="p">
+<h2>Record and replay</h2>
+<div class="row"><button id="rec">Record</button><button id="rpl" disabled>Replay</button><button id="rcl">Clear</button></div>
+<p class="note" id="rst">No recording. It captures button and slider commands with their timing.</p>
+</section>
+<section class="p full">
 <h2>Console</h2>
 <div id="log" role="log"></div>
 <div class="row" style="margin-top:8px"><button id="clr">Clear</button><button id="thm">Switch theme</button></div>
@@ -113,6 +131,7 @@ pre{background:var(--lg);border:1px solid var(--ln);border-radius:8px;padding:10
 <button id="cp2">Copy Wi-Fi sketch</button>
 </section>
 </div></main>
+<button id="es">EMERGENCY STOP</button>
 <script>
 const $=s=>document.querySelector(s);
 const FW=`// Arduino Uno/Nano (USB serial). For ESP32, replace analogWrite with ledcWrite
@@ -212,7 +231,7 @@ async function connect(){
  state(true,'Connected ('+mode+')');log('Connected.','rx');
  }catch(e){link=null;log(e.message||String(e),'er')}
 }
-let buf='';function rxs(t){buf+=t;let i;while((i=buf.search(/\r?\n/))>=0){log('◀ '+buf.slice(0,i),'rx');buf=buf.slice(i).replace(/^\r?\n/,'')}}
+let buf='';function rxs(t){buf+=t;let i;while((i=buf.search(/\r?\n/))>=0){tel(buf.slice(0,i));log('◀ '+buf.slice(0,i),'rx');buf=buf.slice(i).replace(/^\r?\n/,'')}}
 function drop(){link=null;state(false,'Not connected');log('Connection lost.','er')}
 async function disc(){if(!link)return;const l=link;link=null;await l.close();state(false,'Not connected');log('Disconnected.')}
 async function send(c,q){if(!link)return log('Not connected. Connect a board first.','er');
@@ -293,5 +312,36 @@ void loop(){
 }`;
 $('#fw2').textContent=FW2;
 $('#cp2').onclick=async()=>{try{await navigator.clipboard.writeText(FW2);$('#cp2').textContent='Copied'}catch(e){const r=document.createRange();r.selectNodeContents($('#fw2'));getSelection().removeAllRanges();getSelection().addRange(r);$('#cp2').textContent='Selected, press copy'}setTimeout(()=>$('#cp2').textContent='Copy Wi-Fi sketch',1800)};
+const sl=store('rc_sl')||{};
+function saveSl(){store('rc_sl',{spd:$('#spd').value,sv:[...document.querySelectorAll('[data-ch]')].map(r=>r.value)})}
+if(sl.spd){$('#spd').value=sl.spd;$('#spv').textContent=sl.spd}
+document.querySelectorAll('[data-ch]').forEach((r,i)=>{if(sl.sv&&sl.sv[i]!=null){r.value=sl.sv[i];$('#sa'+r.dataset.ch).textContent=r.value}});
+document.querySelectorAll('#spd,[data-ch]').forEach(r=>r.addEventListener('input',saveSl));
+const tv={};let pt=0;
+function tel(l){if(/PONG/.test(l)&&pt){$('#lat').textContent=((performance.now()-pt)|0)+' ms';pt=0;return}
+ if(/^\s*OK\b/.test(l))return;const m=l.match(/^\s*([A-Za-z_][\w ]{0,14}?)\s*[:=]\s*(-?\d+(?:\.\d+)?)/);if(!m)return;tv[m[1]]=m[2];
+ $('#tele').innerHTML=Object.keys(tv).map(k=>`<span class="p" style="padding:6px 10px"><span class="note">${k}</span> <b>${tv[k]}</b></span>`).join('')}
+$('#png').onclick=()=>{if(!link)return log('Not connected.','er');pt=performance.now();send('PING')};
+let qbs=store('rc_qb')||[{n:'Horn',c:'BEEP'},{n:'Lights on',c:'LED:1'},{n:'Lights off',c:'LED:0'}];
+function rq(){const box=$('#qb');box.innerHTML='';qbs.forEach((q,i)=>{const w=document.createElement('span');w.style.cssText='display:inline-flex;gap:2px';
+ const b=document.createElement('button');b.textContent=q.n;b.onclick=()=>send(q.c);const x=document.createElement('button');x.textContent='×';x.title='Remove '+q.n;x.setAttribute('aria-label','Remove '+q.n);x.style.cssText='padding:4px 8px;color:var(--mut)';
+ x.onclick=()=>{qbs.splice(i,1);store('rc_qb',qbs);rq()};w.append(b,x);box.appendChild(w)})}
+$('#qa').onclick=()=>{const n=$('#qn').value.trim(),c=$('#qc').value.trim();if(!n||!c)return;qbs.push({n,c});store('rc_qb',qbs);$('#qn').value=$('#qc').value='';rq()};rq();
+let rcOn=false,mac=[],mt=0,rp=[];const _send=send;
+send=async function(c,q){if(rcOn&&!q&&link)mac.push({t:Date.now()-mt,c});return _send(c,q)};
+$('#rec').onclick=()=>{if(!rcOn){mac=[];mt=Date.now();rcOn=true;$('#rec').textContent='Stop recording';$('#rst').textContent='Recording...'}else{rcOn=false;$('#rec').textContent='Record';$('#rpl').disabled=!mac.length;$('#rst').textContent=mac.length+' commands saved.'}};
+$('#rpl').onclick=()=>{rp.forEach(clearTimeout);rp=mac.map(m=>setTimeout(()=>send(m.c),m.t));rp.push(setTimeout(()=>{send(cm.S);$('#rst').textContent=mac.length+' commands saved.'},(mac.length?mac[mac.length-1].t:0)+500));$('#rst').textContent='Replaying...'};
+$('#rcl').onclick=()=>{rp.forEach(clearTimeout);mac=[];$('#rpl').disabled=true;$('#rst').textContent='No recording.'};
+$('#es').onclick=()=>{rp.forEach(clearTimeout);beat();if(held){document.querySelector(`[data-k=${held}]`).classList.remove('act');held=null}send(cm.S);send(cm.joy.replace('{l}',0).replace('{r}',0),1);if(navigator.vibrate)navigator.vibrate(80)};
+let gl=0,gr=0,gpt=0,gpb=false;
+addEventListener('gamepadconnected',e=>{$('#gp').textContent='Gamepad: '+e.gamepad.id.slice(0,40)});
+addEventListener('gamepaddisconnected',()=>{$('#gp').textContent='Gamepad: not detected. Connect one and press a button.'});
+setInterval(()=>{const g=(navigator.getGamepads?[...navigator.getGamepads()]:[]).find(x=>x);if(!g)return;
+ const pr=!!((g.buttons[0]&&g.buttons[0].pressed)||(g.buttons[1]&&g.buttons[1].pressed));if(pr&&!gpb)$('#es').click();gpb=pr;if(pr){gl=gr=0;return}
+ const dz=v=>Math.abs(v)<.15?0:v,x=dz(g.axes[0]||0),y=-dz(g.axes[1]||0),s=+$('#spd').value,cl=v=>Math.max(-1,Math.min(1,v));
+ const l=Math.round(cl(y+x)*s),r=Math.round(cl(y-x)*s),c=cm.joy.replace('{l}',l).replace('{r}',r);
+ if(l!==gl||r!==gr){gl=l;gr=r;gpt=Date.now();send(c,1)}else if((l||r)&&Date.now()-gpt>250){gpt=Date.now();send(c,1)}},50);
+const th=store('rc_th');if(th)document.documentElement.dataset.theme=th;
+$('#thm').addEventListener('click',()=>store('rc_th',document.documentElement.dataset.theme));
 log('Ready. Choose a connection type and press Connect.');
 </script></body></html>
